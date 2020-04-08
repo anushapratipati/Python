@@ -1,1 +1,59 @@
+import pandas as pd
+import numpy as np
+import torch.nn as nn
+from pytorch_pretrained_bert import BertTokenizer, BertModel
+import torch
+from keras.preprocessing.sequence import pad_sequences
+from sklearn.metrics import classification_report
 
+#DATA EXPLORATION
+pd.set_option('display.max_columns', None)
+df = pd.read_csv("fake_job_postings.csv")
+print(df.head())
+
+#description’ and ‘fraudulent’ columns
+df = df[['description', 'fraudulent']]
+print(df.head())
+
+#Counter’ from the collections module
+from collections import Counter
+print(Counter(df['fraudulent'].values))
+
+# drop ‘NaN’ values
+df.dropna(inplace = True)
+
+
+#balance our data set such that we have an equal number of ‘fraudulent’ and ‘not fraudulent’ types
+df_fraudulent= df[df['fraudulent'] == 1]
+df_normal = df[df['fraudulent'] == 0]
+df_normal = df_normal.sample(n=len(df_fraudulent))
+df = df_normal.append(df_fraudulent)
+df = df.sample(frac=1, random_state = 24).reset_index(drop=True)
+
+#verify desired resukts
+print(Counter(df['fraudulent'].values))
+
+#format the data such that it can be used as input into our BERT model. We split our data into training and testing sets
+train_data = df.head(866)
+test_data = df.tail(866)
+
+#We generate a list of dictionaries with ‘description’ and ‘fraudulent’ keys
+train_data = [{'description': description, 'fraudulent': fraudulent } for description in list(train_data['description']) for fraudulent in list(train_data['fraudulent'])]
+test_data = [{'description': description, 'fraudulent': fraudulent } for description in list(test_data['description']) for fraudulent in list(test_data['fraudulent'])]
+
+#Generate a list of tuples from the list of dictionaries
+train_texts, train_labels = list(zip(*map(lambda d: (d['description'], d['fraudulent']), train_data)))
+test_texts, test_labels = list(zip(*map(lambda d: (d['description'], d['fraudulent']), test_data)))
+
+#Generate tokens and token ids:
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+train_tokens = list(map(lambda t: ['[CLS]'] + tokenizer.tokenize(t)[:511], train_texts))
+test_tokens = list(map(lambda t: ['[CLS]'] + tokenizer.tokenize(t)[:511], test_texts))
+train_tokens_ids = list(map(tokenizer.convert_tokens_to_ids, train_tokens))
+test_tokens_ids = list(map(tokenizer.convert_tokens_to_ids, test_tokens))
+train_tokens_ids = pad_sequences(train_tokens_ids, maxlen=512, truncating="post", padding="post", dtype="int")
+test_tokens_ids = pad_sequences(test_tokens_ids, maxlen=512, truncating="post", padding="post", dtype="int")
+
+#Finally, generate a boolean array based on the value of ‘fraudulent’ for our testing and training sets
+train_y = np.array(train_labels) == 1
+test_y = np.array(test_labels) == 1
